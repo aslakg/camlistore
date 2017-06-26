@@ -83,7 +83,6 @@ package blobpacked // import "camlistore.org/pkg/blobserver/blobpacked"
 import (
 	"archive/zip"
 	"bytes"
-	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -506,7 +505,7 @@ func (s *storage) StorageGeneration() (initTime time.Time, random string, err er
 	if err != nil {
 		return
 	}
-	hash := sha1.New()
+	hash := blob.NewHash()
 	io.WriteString(hash, srand)
 	io.WriteString(hash, lrand)
 	maxTime := func(a, b time.Time) time.Time {

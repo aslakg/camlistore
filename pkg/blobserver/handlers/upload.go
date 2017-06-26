@@ -18,7 +18,6 @@ package handlers
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
@@ -100,7 +99,7 @@ func vivify(blobReceiver blobserver.BlobReceiveConfiger, fileblob blob.SizedRef)
 	}
 	defer fr.Close()
 
-	h := sha1.New()
+	h := blob.NewHash()
 	n, err := io.Copy(h, fr)
 	if err != nil {
 		return fmt.Errorf("Could not read all file of blobref %v: %v", fileblob.Ref.String(), err)

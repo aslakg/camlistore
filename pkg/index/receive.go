@@ -444,7 +444,7 @@ func (ix *Index) populateFile(fetcher blob.Fetcher, b *schema.Blob, mm *mutation
 		mimeType = magic.MIMETypeByExtension(filepath.Ext(b.FileName()))
 	}
 
-	sha1 := sha1.New()
+	sha1 := blob.NewHash()
 	var copyDest io.Writer = sha1
 	var imageBuf *keepFirstN // or nil
 	if strings.HasPrefix(mimeType, "image/") {

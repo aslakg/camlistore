@@ -558,7 +558,7 @@ func (d *defaultStatHasher) Lstat(fileName string) (os.FileInfo, error) {
 }
 
 func (d *defaultStatHasher) Hash(fileName string) (blob.Ref, error) {
-	s1 := sha1.New()
+	s1 := blob.NewHash()
 	file, err := os.Open(fileName)
 	if err != nil {
 		return blob.Ref{}, err

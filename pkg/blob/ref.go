@@ -20,16 +20,21 @@ package blob // import "camlistore.org/pkg/blob"
 import (
 	"bytes"
 	"crypto/sha1"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"hash"
+	"os"
 	"reflect"
 	"strings"
+
+	multihash "github.com/multiformats/go-multihash"
 )
 
 // Pattern is the regular expression which matches a blobref.
 // It does not contain ^ or $.
-const Pattern = `\b([a-z][a-z0-9]*)-([a-f0-9]+)\b`
+//const Pattern = `\b([a-z][a-z0-9]*)-([a-f0-9]+)\b`
+const Pattern = `\b([a-z][a-z0-9]*)-([A-Za-z0-9]+)\b`
 
 // Ref is a reference to a Camlistore blob.
 // It is used as a value type and supports equality (with ==) and the ability
@@ -64,6 +69,7 @@ func (sr SizedRef) String() string {
 type digestType interface {
 	bytes() []byte
 	digestName() string
+	digestToString() string
 	newHash() hash.Hash
 }
 
@@ -73,6 +79,8 @@ func (r Ref) String() string {
 	}
 	// TODO: maybe memoize this.
 	dname := r.digest.digestName()
+	return dname + "-" + r.digest.digestToString()
+
 	bs := r.digest.bytes()
 	buf := getBuf(len(dname) + 1 + len(bs)*2)[:0]
 	defer putBuf(buf)
@@ -86,7 +94,8 @@ func (r Ref) StringMinusOne() string {
 	}
 	// TODO: maybe memoize this.
 	dname := r.digest.digestName()
-	bs := r.digest.bytes()
+	//bs := r.digest.bytes()
+	bs := []byte(r.digest.digestToString())
 	buf := getBuf(len(dname) + 1 + len(bs)*2)[:0]
 	defer putBuf(buf)
 	buf = r.appendString(buf)
@@ -96,16 +105,22 @@ func (r Ref) StringMinusOne() string {
 
 func (r Ref) appendString(buf []byte) []byte {
 	dname := r.digest.digestName()
-	bs := r.digest.bytes()
+	s := r.digest.digestToString()
+
+	//bs := r.digest.bytes()
 	buf = append(buf, dname...)
 	buf = append(buf, '-')
-	for _, b := range bs {
-		buf = append(buf, hexDigit[b>>4], hexDigit[b&0xf])
-	}
-	if o, ok := r.digest.(otherDigest); ok && o.odd {
-		buf = buf[:len(buf)-1]
-	}
+	buf = append(buf, s...)
 	return buf
+	/*
+		for _, b := range bs {
+			buf = append(buf, hexDigit[b>>4], hexDigit[b&0xf])
+		}
+		if o, ok := r.digest.(otherDigest); ok && o.odd {
+			buf = buf[:len(buf)-1]
+		}
+		return buf
+	*/
 }
 
 // HashName returns the lowercase hash function name of the reference.
@@ -123,16 +138,30 @@ func (r Ref) Digest() string {
 	if r.digest == nil {
 		panic("Digest called on invalid Ref")
 	}
-	bs := r.digest.bytes()
+	return r.digest.digestToString()
+}
+
+func (s sha1Digest) digestToString() string {
+	return _digestToString(s)
+}
+
+func (o otherDigest) digestToString() string {
+	return _digestToString(o)
+}
+
+func _digestToString(digest digestType) string {
+	bs := digest.bytes()
 	buf := getBuf(len(bs) * 2)[:0]
 	defer putBuf(buf)
 	for _, b := range bs {
 		buf = append(buf, hexDigit[b>>4], hexDigit[b&0xf])
 	}
-	if o, ok := r.digest.(otherDigest); ok && o.odd {
+	if o, ok := digest.(otherDigest); ok && o.odd {
 		buf = buf[:len(buf)-1]
 	}
-	return string(buf)
+	s := string(buf)
+	fmt.Fprintf(os.Stderr, "Warning: _digestToString called, returning: %s\n", s)
+	return s
 }
 
 func (r Ref) DigestPrefix(digits int) string {
@@ -205,6 +234,10 @@ func Parse(s string) (ref Ref, ok bool) {
 }
 
 func parse(s string, allowAll bool) (ref Ref, ok bool) {
+	m, er := multihash.FromB58String(s)
+	if er == nil {
+		return Ref{digest: MHashFromMultihash(m)}, true
+	}
 	i := strings.Index(s, "-")
 	if i < 0 {
 		return
@@ -213,17 +246,24 @@ func parse(s string, allowAll bool) (ref Ref, ok bool) {
 	hex := s[i+1:]
 	meta, ok := metaFromString[name]
 	if !ok {
+		bug(" uh oh")
 		if allowAll || testRefType[name] {
+			bug(" parse unkknown")
 			return parseUnknown(name, hex)
 		}
+		bug(" bailing")
 		return
 	}
+	/*  This seems arbitrary - we're delegating to ctors so why something so specific here
 	if len(hex) != meta.size*2 {
 		ok = false
+		bug("Failed 1")
 		return
 	}
+	*/
 	dt, ok := meta.ctors(hex)
 	if !ok {
+		bug("ERROR: Failed 2:(")
 		return
 	}
 	return Ref{dt}, true
@@ -245,14 +285,18 @@ func ParseBytes(s []byte) (ref Ref, ok bool) {
 	hex := s[i+1:]
 	meta, ok := metaFromBytes(name)
 	if !ok {
+		bug("  Parsebytes failed 1")
 		return parseUnknown(string(name), string(hex))
 	}
+	/*  This should be handled in ctorb , not here
 	if len(hex) != meta.size*2 {
 		ok = false
 		return
 	}
+	*/
 	dt, ok := meta.ctorb(hex)
 	if !ok {
+		bug("  parsebytes failed 2 :(")
 		return
 	}
 	return Ref{dt}, true
@@ -384,18 +428,28 @@ func RefFromHash(h hash.Hash) Ref {
 // RefFromString returns a blobref from the given string, for the currently
 // recommended hash function
 func RefFromString(s string) Ref {
-	return SHA1FromString(s)
+	s1 := NewHash()
+	s1.Write([]byte(s))
+	return RefFromHash(s1)
+}
+
+func SHA1FromString(s string) Ref {
+	return RefFromString(s)
 }
 
 // SHA1FromString returns a SHA-1 blobref of the provided string.
-func SHA1FromString(s string) Ref {
+func _SHA1FromString(s string) Ref {
 	s1 := sha1.New()
 	s1.Write([]byte(s))
 	return RefFromHash(s1)
 }
 
-// SHA1FromBytes returns a SHA-1 blobref of the provided bytes.
 func SHA1FromBytes(b []byte) Ref {
+	return RefFromBytes(b)
+}
+
+// SHA1FromBytes returns a SHA-1 blobref of the provided bytes.
+func _SHA1FromBytes(b []byte) Ref {
 	s1 := sha1.New()
 	s1.Write(b)
 	return RefFromHash(s1)
@@ -429,6 +483,7 @@ var sha1Meta = &digestMeta{
 
 var metaFromString = map[string]*digestMeta{
 	"sha1": sha1Meta,
+	"mh":   sha256Meta,
 }
 
 type blobTypeAndMeta struct {
@@ -466,9 +521,11 @@ func HashFuncs() []string {
 }
 
 var sha1Type = reflect.TypeOf(sha1.New())
+var sha256Type = reflect.TypeOf(sha256.New())
 
 var metaFromType = map[reflect.Type]*digestMeta{
-	sha1Type: sha1Meta,
+	sha1Type:   sha1Meta,
+	sha256Type: sha256Meta,
 }
 
 type digestMeta struct {
@@ -504,7 +561,8 @@ func putBuf(b []byte) {
 // Currently this is just SHA-1, but will likely change within the next
 // year or so.
 func NewHash() hash.Hash {
-	return sha1.New()
+	//return sha1.New()
+	return sha256.New()
 }
 
 func ValidRefString(s string) bool {
@@ -538,18 +596,22 @@ func (r Ref) MarshalJSON() ([]byte, error) {
 		return null, nil
 	}
 	dname := r.digest.digestName()
-	bs := r.digest.bytes()
+	//bs := r.digest.bytes()
+	bs := r.digest.digestToString()
 	buf := make([]byte, 0, 3+len(dname)+len(bs)*2)
 	buf = append(buf, '"')
 	buf = r.appendString(buf)
 	buf = append(buf, '"')
+
 	return buf, nil
 }
 
 // MarshalBinary implements Go's encoding.BinaryMarshaler interface.
 func (r Ref) MarshalBinary() (data []byte, err error) {
 	dname := r.digest.digestName()
-	bs := r.digest.bytes()
+	//bs := r.digest.bytes()
+	bs := []byte(r.digest.digestToString())
+
 	data = make([]byte, 0, len(dname)+1+len(bs))
 	data = append(data, dname...)
 	data = append(data, '-')
@@ -619,6 +681,8 @@ func (s SizedByRef) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func TypeAlphabet(typ string) string {
 	switch typ {
 	case "sha1":
+		return hexDigit
+	case "sha256":
 		return hexDigit
 	}
 	return ""

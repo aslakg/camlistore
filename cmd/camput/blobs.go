@@ -18,7 +18,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"errors"
 	"flag"
 	"fmt"
@@ -129,7 +128,7 @@ func fileBlobHandle(up *Uploader, path string) (uh *client.UploadHandle, err err
 }
 
 func blobDetails(contents io.ReadSeeker) (bref blob.Ref, size uint32, err error) {
-	s1 := sha1.New()
+	s1 := blob.NewHash()
 	if _, err = contents.Seek(0, 0); err != nil {
 		return
 	}
