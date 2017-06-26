@@ -18,7 +18,6 @@ package localdisk
 
 import (
 	"fmt"
-
 	"path/filepath"
 
 	"camlistore.org/pkg/blob"
@@ -30,10 +29,10 @@ func blobFileBaseName(b blob.Ref) string {
 
 func (ds *DiskStorage) blobDirectory(b blob.Ref) string {
 	d := b.Digest()
-	if len(d) < 4 {
+	if len(d) < 6 {
 		d = d + "____"
 	}
-	return filepath.Join(ds.root, b.HashName(), d[0:2], d[2:4])
+	return filepath.Join(ds.root, b.HashName(), d[2:4], d[4:6])
 }
 
 func (ds *DiskStorage) blobPath(b blob.Ref) string {
