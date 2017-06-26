@@ -61,6 +61,7 @@ type fileOptions struct {
 	exifTime     bool // use the time in exif metadata as the modtime if possible.
 	capCtime     bool // use mtime as ctime if ctime > mtime
 	contentsOnly bool // do not store any of the file's attributes, only its contents.
+	lessMeta     bool // only store filename and size, no other metadata
 }
 
 func (o *fileOptions) tags() []string {

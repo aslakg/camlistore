@@ -59,8 +59,8 @@ type fileCmd struct {
 	argsFromInput     bool // Android mode: filenames piped into stdin, one at a time.
 	deleteAfterUpload bool // with fileNodes, deletes the input file once uploaded
 	contentsOnly      bool // do not store any of the file's attributes, only its contents.
-
-	statcache bool
+	lessMeta          bool // only store fileName, no other meta
+	statcache         bool
 
 	// Go into in-memory stats mode only; doesn't actually upload.
 	memstats bool
@@ -97,6 +97,7 @@ func init() {
 			flags.BoolVar(&cmd.capCtime, "capctime", false, "(debug flag) For file blobs use file modification time as creation time if it would be bigger (newer) than modification time. For stable filenode creation (you can forge mtime, but can't forge ctime).")
 			flags.BoolVar(&flagUseSQLiteChildCache, "sqlitecache", false, "(debug flag) Use sqlite for the statcache and havecache instead of a flat cache.")
 			flags.BoolVar(&cmd.contentsOnly, "contents_only", false, "(debug flag) Do not store any of the file's attributes. We write only the file's contents (the blobRefs for its parts) to the created file schema.")
+			flags.BoolVar(&cmd.lessMeta, "lm", false, "Less meta. Do not store file attributes other than name. We write only the file's contents (the blobRefs for its parts) to the created file schema.")
 		} else {
 			cmd.statcache = true
 		}
@@ -407,6 +408,9 @@ func (up *Uploader) uploadNode(n *node) (*client.PutResult, error) {
 	default:
 		return nil, fmt.Errorf("camput.files: unsupported file type %v for file %v", mode, n.fullPath)
 	case fi.IsDir():
+		if up.fileOpts.lessMeta {
+			bb = schema.NewFileMap(n.fullPath) // ASLAK: Reducing the filemap to avoid metadata
+		}
 		ss, err := n.directoryStaticSet()
 		if err != nil {
 			return nil, err
@@ -553,6 +557,8 @@ func (up *Uploader) uploadNodeRegularFile(n *node) (*client.PutResult, error) {
 	var filebb *schema.Builder
 	if up.fileOpts.contentsOnly {
 		filebb = schema.NewFileMap("")
+	} else if up.fileOpts.lessMeta {
+		filebb = schema.NewFileMap(n.fullPath)
 	} else {
 		filebb = schema.NewCommonFileMap(n.fullPath, n.fi)
 	}
@@ -566,7 +572,7 @@ func (up *Uploader) uploadNodeRegularFile(n *node) (*client.PutResult, error) {
 		return nil, err
 	}
 	defer file.Close()
-	if !up.fileOpts.contentsOnly {
+	if !up.fileOpts.contentsOnly && !up.fileOpts.lessMeta {
 		if up.fileOpts.exifTime {
 			ra, ok := file.(io.ReaderAt)
 			if !ok {
