@@ -236,7 +236,7 @@ func Parse(s string) (ref Ref, ok bool) {
 func parse(s string, allowAll bool) (ref Ref, ok bool) {
 	m, er := multihash.FromB58String(s)
 	if er == nil {
-		return Ref{digest: MHashFromMultihash(m)}, true
+		return Ref{digest: mhashFromMultihash(m)}, true
 	}
 	i := strings.Index(s, "-")
 	if i < 0 {
@@ -246,24 +246,19 @@ func parse(s string, allowAll bool) (ref Ref, ok bool) {
 	hex := s[i+1:]
 	meta, ok := metaFromString[name]
 	if !ok {
-		bug(" uh oh")
 		if allowAll || testRefType[name] {
-			bug(" parse unkknown")
 			return parseUnknown(name, hex)
 		}
-		bug(" bailing")
 		return
 	}
 	/*  This seems arbitrary - we're delegating to ctors so why something so specific here
 	if len(hex) != meta.size*2 {
 		ok = false
-		bug("Failed 1")
 		return
 	}
 	*/
 	dt, ok := meta.ctors(hex)
 	if !ok {
-		bug("ERROR: Failed 2:(")
 		return
 	}
 	return Ref{dt}, true
@@ -285,7 +280,6 @@ func ParseBytes(s []byte) (ref Ref, ok bool) {
 	hex := s[i+1:]
 	meta, ok := metaFromBytes(name)
 	if !ok {
-		bug("  Parsebytes failed 1")
 		return parseUnknown(string(name), string(hex))
 	}
 	/*  This should be handled in ctorb , not here
@@ -296,7 +290,6 @@ func ParseBytes(s []byte) (ref Ref, ok bool) {
 	*/
 	dt, ok := meta.ctorb(hex)
 	if !ok {
-		bug("  parsebytes failed 2 :(")
 		return
 	}
 	return Ref{dt}, true
@@ -393,6 +386,9 @@ func sha1FromBinary(b []byte) digestType {
 func sha1FromHexString(hex string) (digestType, bool) {
 	var d sha1Digest
 	var bad bool
+	if len(hex) != sha1.Size*2 {
+		return nil, false
+	}
 	for i := 0; i < len(hex); i += 2 {
 		d[i/2] = hexVal(hex[i], &bad)<<4 | hexVal(hex[i+1], &bad)
 	}
@@ -406,6 +402,9 @@ func sha1FromHexString(hex string) (digestType, bool) {
 func sha1FromHexBytes(hex []byte) (digestType, bool) {
 	var d sha1Digest
 	var bad bool
+	if len(hex) != sha1.Size*2 {
+		return nil, false
+	}
 	for i := 0; i < len(hex); i += 2 {
 		d[i/2] = hexVal(hex[i], &bad)<<4 | hexVal(hex[i+1], &bad)
 	}
@@ -413,6 +412,12 @@ func sha1FromHexBytes(hex []byte) (digestType, bool) {
 		return nil, false
 	}
 	return d, true
+}
+
+func RefFromBytes(b []byte) Ref {
+	s1 := NewHash()
+	s1.Write(b)
+	return RefFromHash(s1)
 }
 
 // RefFromHash returns a blobref representing the given hash.
